@@ -155,51 +155,8 @@ static _Bool find_marker(FILE *fp, int marker) {
   return false;
 }
 
-static exif_t *read_exif(const char *filename) {
-  DBG("Loading %s", filename);
-  FILE *fp = fopen(filename, "r");
-  if (!fp)
-    FAIL("Error opening %s: %s", filename, strerror(errno));
-
-  exif_t *ex;
-  if (!(ex = calloc(1, sizeof(exif_t))))
-    FAIL("Error allocating memory to store an exif instance.");
-
-  // Find the start of the image.
-  const uint8_t header_marker = read_marker(fp, false);
-  if (header_marker != 0xD8) {
-    DBG("%s: Not a file format we know how to handle.", filename);
-    goto oops; // Not an image format we know how to handle.
-  }
-
-  // Find the start of APP1 (where exif lives).
-  if (!find_marker(fp, 0xE1)) {
-    DBG("%s: Could not locate EXIF data.", filename);
-    goto oops; // Couldnt find exif.
-  }
-
-  // Assume we have a valid app1, read in its contents.
-  ex->size = read_marker_size(fp) - 2;
-  if (!(ex->data = calloc(1, ex->size)))
-    FAIL("Error allocating exif data contents.");
-  if (fread(ex->data, 1, ex->size, fp) != ex->size)
-    FAIL("Error reading exif contents.");
-
-  fclose(fp);
-
-  // Verify the exif header.  Return NULL if invalid.
-  if (strncmp((const char *)ex->data, "Exif", 4) == 0 &&
-      ex->data[4] == 0  && ex->data[5] == 0) {
-    DBG("%s: Located %zu bytes of Exif data.", filename, ex->size);
-    return ex;
-  }
-
-oops:
-    free(ex);
-    return NULL;
-}
-
 static void free_exif(exif_t *ex) {
+  free(ex->tiff);
   free(ex->data);
   free(ex);
 }
@@ -278,8 +235,60 @@ static tiff_t *exif_to_tiff(const exif_t *ex) {
   return tiff;
 }
 
-static void free_tiff(tiff_t *tiff) {
-  free(tiff);
+static exif_t *read_exif(const char *filename) {
+  DBG("Loading %s", filename);
+  FILE *fp = fopen(filename, "r");
+  if (!fp)
+    FAIL("Error opening %s: %s", filename, strerror(errno));
+
+  exif_t *ex;
+  if (!(ex = calloc(1, sizeof(exif_t))))
+    FAIL("Error allocating memory to store an exif instance.");
+
+  // Find the start of the image.
+  const uint8_t header_marker = read_marker(fp, false);
+  if (header_marker != 0xD8) {
+    DBG("%s: Not a file format we know how to handle.", filename);
+    goto oops; // Not an image format we know how to handle.
+  }
+
+  // Find the start of APP1 (where exif lives).
+  if (!find_marker(fp, 0xE1)) {
+    DBG("%s: Could not locate EXIF data.", filename);
+    goto oops; // Couldnt find exif.
+  }
+
+  // Assume we have a valid app1, read in its contents.
+  ex->size = read_marker_size(fp) - 2;
+  if (!(ex->data = calloc(1, ex->size)))
+    FAIL("Error allocating exif data contents.");
+  if (fread(ex->data, 1, ex->size, fp) != ex->size)
+    FAIL("Error reading exif contents.");
+
+  fclose(fp);
+
+  // Verify the exif header.  Return NULL if invalid.
+  if (strncmp((const char *)ex->data, "Exif", 4) == 0 &&
+      ex->data[4] == 0  && ex->data[5] == 0) {
+    // Set the TIFF data.
+    ex->tiff = exif_to_tiff(ex);
+    DBG("%s: Located %zu bytes of Exif data.", filename, ex->size);
+    return ex;
+  }
+
+oops:
+    free(ex);
+    return NULL;
+}
+
+static void dump(const exif_t *ex) {
+  if (!ex->tiff)
+    return;
+
+  int ifd_number = 0;
+  for (const ifd_t *ifd = ex->tiff->ifds; ifd; ifd=ifd->next)
+    for (int i=0; i<ifd->hdr.n_entries; ++i)
+      DBG("IFD:%d -- Tag 0x%04x", ifd_number, ifd->hdr.entries[i].tag);
 }
 
 int main(int argc, char **argv) {
@@ -294,9 +303,8 @@ int main(int argc, char **argv) {
   for (int i=1; i<argc; ++i) {
     exif_t *ex;
     if ((ex = read_exif(argv[i]))) {
-      tiff_t *tiff = exif_to_tiff(ex);
+      dump(ex);
       free_exif(ex);
-      free_tiff(tiff);
     }
   }
 
