@@ -106,12 +106,6 @@ static void usage(const char *execname) {
   exit(EXIT_SUCCESS);
 }
 
-static void display(const char *filename, const coords_t *coords) {
-  assert(coords   && "No coords presented.");
-  assert(filename && "No filename presented.");
-  printf("%s: %u, %u \n", filename, coords->lat, coords->lon);
-}
-
 static int safe_fgetc(FILE *fp) {
   const int byte = fgetc(fp);
   if (byte == EOF)
