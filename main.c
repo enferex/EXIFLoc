@@ -62,6 +62,9 @@
 #error "Middle endian not supported."
 #endif
 
+// This represents the tag to search for. (ifd tag and type).
+typedef struct { uint16_t tag, type; } locator_t;
+
 typedef struct {uint32_t lat, lon; } coords_t;
 
 typedef struct _ifd_entry_t {
@@ -289,13 +292,35 @@ static void dump(const exif_t *ex) {
       DBG("IFD:%d -- Tag 0x%04x", ifd_number, ifd->entries[i].tag);
 }
 
+/**
+static locator_t *find_locator(const locators_t *locs, const uint16_t tag) {
+    const locator_t *loc = locs;
+    for (int i=0; i<locs->n_locators; ++i)
+      if (locs[i].tag == tag)
+        return &locs[i];
+    return NULL;
+}
+
+static void locate_tags(const exif_t *ex, const locator_t *locs) {
+    assert(ex->tiff && "No TIFF/EXIF tags available.");
+    for (const ifd_t *ifd = ex->tiff->ifds; ifd; ifd=ifd->next) {
+      for (uint16_t i=0; i<ifd->n_entries; ++i) {
+        const ifd_entry_t *entry = &ifd->entries[i];
+        const uint16_t tag = NATIVE2(ex->tiff, entry->tag);
+        if (is_match(locators, tag)
+      }
+    }
+}
+**/
+
 int main(int argc, char **argv) {
   if (argc == 0)
     usage(argv[0]);
 
   // We only care about GPS markers.
-  //locator_t locators[] = {
-  //};
+  locator_t locators[] = {
+//      {0x8825, 0x0000, gps_handler} // GPS tag and some type.
+  };
 
   // For each file specified on the command line.
   for (int i=1; i<argc; ++i) {
@@ -304,6 +329,9 @@ int main(int argc, char **argv) {
       dump(ex);
       free_exif(ex);
     }
+
+    // Search.
+ //   locate_tags(ex, locators);
   }
 
   return 0;
