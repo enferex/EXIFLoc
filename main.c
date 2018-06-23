@@ -1,12 +1,12 @@
 #define _DEFAULT_SOURCE
-#include <stdio.h>
-#include <stdlib.h>
-#include <stdint.h>
 #include <assert.h>
 #include <endian.h>
 #include <errno.h>
-#include <string.h>
 #include <stdbool.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 
 /* Great resources:
  * TIFF (Format of Exif data):
@@ -24,21 +24,21 @@
 #define MARKER_EOI 0xD9 // End of Image
 #define MARKER_SOS 0xDA // Start of Stream
 
-#define _PR(_fd, _pre, _msg, ...)        \
-  do {                                   \
-    fprintf(_fd, _pre " " _msg "\n", ##__VA_ARGS__); \
+#define _PR(_fd, _pre, _msg, ...)                                              \
+  do {                                                                         \
+    fprintf(_fd, _pre " " _msg "\n", ##__VA_ARGS__);                           \
   } while (0)
 
-#define FAIL(_msg, ...)                    \
-  do {                               \
-    _PR(stderr, "[!]", _msg, ##__VA_ARGS__); \
-    exit(EXIT_FAILURE);              \
+#define FAIL(_msg, ...)                                                        \
+  do {                                                                         \
+    _PR(stderr, "[!]", _msg, ##__VA_ARGS__);                                   \
+    exit(EXIT_FAILURE);                                                        \
   } while (0)
 
 #define PR(...) _PR(stdout, "[-]", __VA_ARGS__)
 
 #ifdef DEBUG
-#define DBG(...) _PR(stdout, "[+]",  __VA_ARGS__)
+#define DBG(...) _PR(stdout, "[+]", __VA_ARGS__)
 #else
 #define DBG(...)
 #endif
@@ -53,21 +53,22 @@
  */
 #define IS_BE(_h) (_h->hdr.byte_order == 0x4D4D)
 #if __BYTE_ORDER == __BIG_ENDIAN
-#define NATIVE2(_h,_v) (IS_BE(_h) ? (_v) : le16toh(_v))
-#define NATIVE4(_h,_v) (IS_BE(_h) ? (_v) : le32toh(_v))
+#define NATIVE2(_h, _v) (IS_BE(_h) ? (_v) : le16toh(_v))
+#define NATIVE4(_h, _v) (IS_BE(_h) ? (_v) : le32toh(_v))
 #elif __BYTE_ORDER == __LITTLE_ENDIAN
-#define NATIVE2(_h,_v) (IS_BE(_h) ? htobe16(_v) : (_v))
-#define NATIVE4(_h,_v) (IS_BE(_h) ? htobe32(_v) : (_v))
+#define NATIVE2(_h, _v) (IS_BE(_h) ? htobe16(_v) : (_v))
+#define NATIVE4(_h, _v) (IS_BE(_h) ? htobe32(_v) : (_v))
 #else
 #error "Middle endian not supported."
 #endif
 
-// This represents the tag to search for. (ifd tag and type).
-typedef struct { uint16_t tag, type; } locator_t;
-
-typedef struct {uint32_t lat, lon; } coords_t;
+typedef struct _coords_t {
+  uint32_t lat, lon;
+} coords_t;
 
 typedef struct _ifd_entry_t {
+  // These reamain in their original byte order,
+  // readers of this should use NATIVE to make sense of these values.
   uint16_t tag;
   uint16_t type;
   uint32_t n_components;
@@ -95,10 +96,25 @@ typedef struct _tiff_t {
 
 typedef struct _exif_t {
 #define EXIF_HDR_BYTES 6 // This is the first 6 bytes in 'data': 'Exif00'
-  size_t   size;
+  size_t size;
   uint8_t *data;
-  tiff_t  *tiff;
+  tiff_t *tiff;
 } exif_t;
+
+// This represents the tag to search for.
+typedef struct _locator_t {
+  uint16_t tag;  // IFD tag  (native endian)
+  uint16_t type; // IFD type (native endian)
+
+  // This is called back if tag is a match when searching IFDs.
+  void (*cb)(const exif_t *e, const ifd_entry_t *i);
+} locator_t;
+
+// This represents a collection of locator_t instances.
+typedef struct _locator_list_t {
+  const int n_locators;
+  const locator_t *locators;
+} locator_list_t;
 
 static void usage(const char *execname) {
   printf("Usage: %s [jpeg ...]\n", execname);
@@ -139,7 +155,8 @@ static _Bool find_marker(FILE *fp, int marker) {
 
     // Special cases.
     if (current_marker == MARKER_SOS)
-      return false; // This will lead to the EOI, so we are done with this image.
+      return false; // This will lead to the EOI, so we are done with this
+                    // image.
     else if (current_marker == MARKER_SOI || current_marker == MARKER_EOI)
       continue;
     else {
@@ -161,11 +178,8 @@ static void free_exif(exif_t *ex) {
 }
 
 // Given an exif and an offset, read data from the exif data blob.
-static _Bool read_data_from_exif(
-    void         *dest,
-    uint64_t      offset,
-    size_t        size,
-    const exif_t *ex) {
+static _Bool read_data_from_exif(void *dest, uint64_t offset, size_t size,
+                                 const exif_t *ex) {
   if (offset + size > ex->size)
     return false;
   return memcpy(dest, ex->data + offset, size) != NULL;
@@ -209,11 +223,11 @@ static tiff_t *exif_to_tiff(const exif_t *ex) {
   // The TIFF header follows the EXIF header, so use the exif header size as the
   // offset.
   if (!read_data_from_exif((void *)tiff, EXIF_HDR_BYTES, sizeof(tiff->hdr), ex))
-      FAIL("Error reading TIFF header.");
+    FAIL("Error reading TIFF header.");
 
   // Fix up the header so that we can make sense of it.
   tiff->hdr.universe = NATIVE2(tiff, tiff->hdr.universe);
-  tiff->hdr.offset   = NATIVE4(tiff, tiff->hdr.offset);
+  tiff->hdr.offset = NATIVE4(tiff, tiff->hdr.offset);
 
   // Sanity check.
   if (tiff->hdr.universe != 42)
@@ -226,11 +240,10 @@ static tiff_t *exif_to_tiff(const exif_t *ex) {
   uint64_t off = EXIF_HDR_BYTES + tiff->hdr.offset;
 
   // Read in all of the IFD entries, off will be zero at the end.
-  ifd_t *prev = NULL;
   while (off && (off < ex->size)) {
     ifd_t *ifd = read_ifd(ex, tiff, &off);
-    ifd->next = prev;
-    prev = ifd;
+    ifd->next = tiff->ifds;
+    tiff->ifds = ifd;
   }
 
   return tiff;
@@ -246,7 +259,7 @@ static exif_t *read_exif(const char *filename) {
   if (!(ex = calloc(1, sizeof(exif_t))))
     FAIL("Error allocating memory to store an exif instance.");
 
-  // Find the start of the image.
+  // Find the start of the image marker: SOI.
   const uint8_t header_marker = read_marker(fp, false);
   if (header_marker != 0xD8) {
     DBG("%s: Not a file format we know how to handle.", filename);
@@ -255,8 +268,8 @@ static exif_t *read_exif(const char *filename) {
 
   // Find the start of APP1 (where exif lives).
   if (!find_marker(fp, 0xE1)) {
-    DBG("%s: Could not locate EXIF data.", filename);
-    goto oops; // Couldnt find exif.
+    DBG("%s: Could not locate exif data.", filename);
+    goto oops; // Couldn't find exif.
   }
 
   // Assume we have a valid app1, read in its contents.
@@ -268,18 +281,18 @@ static exif_t *read_exif(const char *filename) {
 
   fclose(fp);
 
-  // Verify the exif header.  Return NULL if invalid.
-  if (strncmp((const char *)ex->data, "Exif", 4) == 0 &&
-      ex->data[4] == 0  && ex->data[5] == 0) {
+  // Verify the exif header and return NULL if invalid.
+  if (strncmp((const char *)ex->data, "Exif", 4) == 0 && ex->data[4] == 0 &&
+      ex->data[5] == 0) {
     // Set the TIFF data.
     ex->tiff = exif_to_tiff(ex);
-    DBG("%s: Located %zu bytes of Exif data.", filename, ex->size);
+    DBG("%s: Located %zu bytes of exif data.", filename, ex->size);
     return ex;
   }
 
 oops:
-    free(ex);
-    return NULL;
+  free(ex);
+  return NULL;
 }
 
 static void dump(const exif_t *ex) {
@@ -287,43 +300,55 @@ static void dump(const exif_t *ex) {
     return;
 
   int ifd_number = 0;
-  for (const ifd_t *ifd = ex->tiff->ifds; ifd; ifd=ifd->next)
-    for (int i=0; i<ifd->n_entries; ++i)
+  for (const ifd_t *ifd = ex->tiff->ifds; ifd; ifd = ifd->next) {
+    for (int i = 0; i < ifd->n_entries; ++i)
       DBG("IFD:%d -- Tag 0x%04x", ifd_number, ifd->entries[i].tag);
+    ++ifd_number;
+  }
 }
 
-/**
-static locator_t *find_locator(const locators_t *locs, const uint16_t tag) {
-    const locator_t *loc = locs;
-    for (int i=0; i<locs->n_locators; ++i)
-      if (locs[i].tag == tag)
-        return &locs[i];
-    return NULL;
+// Scan each locator to see if it matches the tag.
+static void callback_if_found(const locator_list_t *list, const exif_t *ex,
+                              const ifd_entry_t *entry) {
+  const uint16_t tag = NATIVE2(ex->tiff, entry->tag);
+  const locator_t *locs = list->locators;
+  for (int i = 0; i < list->n_locators; ++i)
+    if (locs[i].tag == tag)
+      locs[i].cb(ex, entry);
 }
 
-static void locate_tags(const exif_t *ex, const locator_t *locs) {
-    assert(ex->tiff && "No TIFF/EXIF tags available.");
-    for (const ifd_t *ifd = ex->tiff->ifds; ifd; ifd=ifd->next) {
-      for (uint16_t i=0; i<ifd->n_entries; ++i) {
-        const ifd_entry_t *entry = &ifd->entries[i];
-        const uint16_t tag = NATIVE2(ex->tiff, entry->tag);
-        if (is_match(locators, tag)
-      }
+// Scan each IFD entry in ex.
+static void locate_tags(const exif_t *ex, const locator_list_t *list) {
+  assert(ex->tiff && "No TIFF/EXIF tags available.");
+  assert(list && list->n_locators && "No locators defined.");
+  for (const ifd_t *ifd = ex->tiff->ifds; ifd; ifd = ifd->next) {
+    for (uint16_t i = 0; i < ifd->n_entries; ++i) {
+      const ifd_entry_t *entry = &ifd->entries[i];
+      callback_if_found(list, ex, entry);
     }
+  }
 }
-**/
+
+static void gps_tag_handler(const exif_t *ex, const ifd_entry_t *gps_tag) {
+  const uint32_t offset = NATIVE4(ex->tiff, gps_tag->value_offset);
+  DBG("Located GPS tag at offset 0x%x", offset);
+}
 
 int main(int argc, char **argv) {
   if (argc == 0)
     usage(argv[0]);
 
-  // We only care about GPS markers.
-  locator_t locators[] = {
-//      {0x8825, 0x0000, gps_handler} // GPS tag and some type.
+  // Create the locator objets.  Basically just a key and a callback,
+  // which is what we use for identifying EXIF tags we are interested in.
+  locator_t locator_entries[] = {
+      {0x8825, 0x0000, gps_tag_handler} // GPS tag and some type.
   };
+  const locator_list_t locators = {.n_locators = sizeof(locator_entries) /
+                                                 sizeof(locator_entries[0]),
+                                   .locators = locator_entries};
 
   // For each file specified on the command line.
-  for (int i=1; i<argc; ++i) {
+  for (int i = 1; i < argc; ++i) {
     exif_t *ex;
     if ((ex = read_exif(argv[i]))) {
       dump(ex);
@@ -331,7 +356,7 @@ int main(int argc, char **argv) {
     }
 
     // Search.
- //   locate_tags(ex, locators);
+    locate_tags(ex, &locators);
   }
 
   return 0;
