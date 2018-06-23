@@ -7,6 +7,10 @@ all: debug
 $(APP): main.c
 	$(CC) $(CFLAGS) $^ -o $@
 
+.PHONY: test
+test: $(APP)
+	./$(APP) ./test.jpg
+
 .PHONY: release
 release: CFLAGS += -DNDEBUG -O3
 release: $(APP)

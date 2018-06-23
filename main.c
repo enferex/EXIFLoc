@@ -71,15 +71,11 @@ typedef struct _ifd_entry_t {
   uint32_t value_offset;
 } ifd_entry_t;
 
-typedef struct _ifd_hdr_t {
-  uint16_t n_entries;
-  ifd_entry_t entries[0];
-} ifd_hdr_t;
-
 // This is really the entire IFD but with a next pointer so that we can chain
 // IFDs together.
 typedef struct _ifd_t {
-  ifd_hdr_t hdr;
+  uint16_t n_entries;
+  ifd_entry_t *entries;
   struct _ifd_t *next;
 } ifd_t;
 
@@ -95,7 +91,7 @@ typedef struct _tiff_t {
 } tiff_t;
 
 typedef struct _exif_t {
-#define EXIF_HEADER_BYTES 6 // This is the first 6 bytes in 'data': 'Exif00'
+#define EXIF_HDR_BYTES 6 // This is the first 6 bytes in 'data': 'Exif00'
   size_t   size;
   uint8_t *data;
   tiff_t  *tiff;
@@ -181,25 +177,23 @@ static ifd_t *read_ifd(const exif_t *ex, const tiff_t *tiff, uint64_t *offset) {
   n_entries = NATIVE2(tiff, n_entries);
   *offset += sizeof(n_entries);
 
-  const size_t n_bytes = n_entries * sizeof(ifd_entry_t);
-  ifd_t *ifd = calloc(1, n_bytes);
+  ifd_t *ifd = calloc(1, sizeof(ifd));
   if (!ifd)
     FAIL("Error allocating memory to store an IFD.");
 
   // Advance to the start of the first entry.
-  ifd->hdr.n_entries = n_entries;
-  if (!read_data_from_exif((void *)ifd->hdr.entries, *offset, n_bytes, ex))
-    FAIL("Error loading IFD entry count.");
-  *offset += n_bytes;
+  DBG("Reading %d entries starting at offset 0x%lx.", n_entries, *offset);
+  ifd->n_entries = n_entries;
 
-  // Put the values for each entry into native parlance.
-  for (int i=0; i<n_entries; ++i) {
-    ifd_entry_t *entry = &ifd->hdr.entries[i];
-    entry->tag = NATIVE2(tiff, entry->tag);
-    entry->type = NATIVE2(tiff, entry->type);
-    entry->n_components = NATIVE4(tiff, entry->n_components);
-    entry->value_offset = NATIVE4(tiff, entry->value_offset);
-  }
+  // Instead of allocating more memory, and IFD entries are contiguous,
+  // just point the start of the entires to 'entries' in this header.
+  ifd->entries = (ifd_entry_t *)(ex + *offset);
+  *offset += n_entries * sizeof(ifd_entry_t);
+
+  // Offset to next IFD.
+  uint32_t next = *(uint32_t *)(ex + *offset);
+  *offset = NATIVE4(tiff, next);
+  DBG("Next IFD offset is: 0x%lx.", *offset);
 
   return ifd;
 }
@@ -209,9 +203,10 @@ static tiff_t *exif_to_tiff(const exif_t *ex) {
   if (!tiff)
     FAIL("Error allocating memory to store Exif in TIFF format.");
 
-  if (!read_data_from_exif((void *)tiff,
-       EXIF_HEADER_BYTES, sizeof(tiff->hdr), ex))
-    FAIL("Error reading TIFF header.");
+  // The TIFF header follows the EXIF header, so use the exif header size as the
+  // offset.
+  if (!read_data_from_exif((void *)tiff, EXIF_HDR_BYTES, sizeof(tiff->hdr), ex))
+      FAIL("Error reading TIFF header.");
 
   // Fix up the header so that we can make sense of it.
   tiff->hdr.universe = NATIVE2(tiff, tiff->hdr.universe);
@@ -221,12 +216,15 @@ static tiff_t *exif_to_tiff(const exif_t *ex) {
   if (tiff->hdr.universe != 42)
     FAIL("Invalid TIFF format.");
 
-  // Initialize the IFD scan by placing the offset at the beginning.
-  uint64_t off = EXIF_HEADER_BYTES + tiff->hdr.offset;
+  // Initialize the IFD scan by placing the offset at the beginning of the TIFF
+  // data.  We advance past the first header (EXIF) since the TIFF data offset
+  // is calculated starting at the beginning of the TIFF blob (after the EXIF
+  // header).
+  uint64_t off = EXIF_HDR_BYTES + tiff->hdr.offset;
 
-  // Read in all of the IFD entries.
+  // Read in all of the IFD entries, off will be zero at the end.
   ifd_t *prev = NULL;
-  while (off < ex->size) {
+  while (off && (off < ex->size)) {
     ifd_t *ifd = read_ifd(ex, tiff, &off);
     ifd->next = prev;
     prev = ifd;
@@ -287,8 +285,8 @@ static void dump(const exif_t *ex) {
 
   int ifd_number = 0;
   for (const ifd_t *ifd = ex->tiff->ifds; ifd; ifd=ifd->next)
-    for (int i=0; i<ifd->hdr.n_entries; ++i)
-      DBG("IFD:%d -- Tag 0x%04x", ifd_number, ifd->hdr.entries[i].tag);
+    for (int i=0; i<ifd->n_entries; ++i)
+      DBG("IFD:%d -- Tag 0x%04x", ifd_number, ifd->entries[i].tag);
 }
 
 int main(int argc, char **argv) {
