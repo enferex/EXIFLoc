@@ -295,17 +295,21 @@ oops:
   return NULL;
 }
 
+#ifdef DEBUG
 static void dump(const exif_t *ex) {
   if (!ex->tiff)
     return;
 
   int ifd_number = 0;
   for (const ifd_t *ifd = ex->tiff->ifds; ifd; ifd = ifd->next) {
-    for (int i = 0; i < ifd->n_entries; ++i)
-      DBG("IFD:%d -- Tag 0x%04x", ifd_number, ifd->entries[i].tag);
+    for (int i = 0; i < ifd->n_entries; ++i) {
+      const uint16_t tag = NATIVE2(ex->tiff, ifd->entries[i].tag);
+      DBG("IFD:%d -- Tag 0x%04x", ifd_number, tag);
+    }
     ++ifd_number;
   }
 }
+#endif // DEBUG
 
 // Scan each locator to see if it matches the tag.
 static void callback_if_found(const locator_list_t *list, const exif_t *ex,
@@ -351,7 +355,9 @@ int main(int argc, char **argv) {
   for (int i = 1; i < argc; ++i) {
     exif_t *ex;
     if ((ex = read_exif(argv[i]))) {
+#ifdef DEBUG
       dump(ex);
+#endif
       free_exif(ex);
     }
 
