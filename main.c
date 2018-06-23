@@ -95,7 +95,7 @@ typedef struct _tiff_t {
 } tiff_t;
 
 typedef struct _exif_t {
-#define EXIF_HEADER_BYTES 6 // This are the first 6 bytes in 'data': 'Exif00'
+#define EXIF_HEADER_BYTES 6 // This is the first 6 bytes in 'data': 'Exif00'
   size_t   size;
   uint8_t *data;
   tiff_t  *tiff;
