@@ -2,7 +2,7 @@ CC=clang
 CFLAGS=-g3 -Wall -std=c11
 APP=exifpluck
 
-all: debug
+all: release
 
 $(APP): main.c
 	$(CC) $(CFLAGS) $^ -o $@
