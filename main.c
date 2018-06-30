@@ -203,8 +203,8 @@ static ifd_t *read_ifd(const exif_t *ex, uint64_t *offset) {
     FAIL("Error allocating memory to store an IFD.");
 
   // Advance to the start of the first entry.
-  DBG("Reading %d entries (%zu bytes) starting at offset 0x%lx.",
-      n_entries, n_entries * sizeof(ifd_entry_t), *offset);
+  DBG("Reading %d entries (%zu bytes) starting at offset 0x%lx.", n_entries,
+      n_entries * sizeof(ifd_entry_t), *offset);
   ifd->n_entries = n_entries;
 
   // Instead of allocating more memory, and IFD entries are contiguous,
@@ -347,9 +347,10 @@ static void locate_tags(const exif_t *ex, const locator_list_t *list) {
 }
 
 // Given and IFD and tag, return a ptr to the tag or NULL if it's not found.
-static const ifd_entry_t *find_tag(const exif_t *ex, const ifd_t *ifd, uint16_t tag) {
+static const ifd_entry_t *find_tag(const exif_t *ex, const ifd_t *ifd,
+                                   uint16_t tag) {
   assert(ifd && "Invalid IFD to search.");
-  for (uint16_t i=0; i<ifd->n_entries; ++i) {
+  for (uint16_t i = 0; i < ifd->n_entries; ++i) {
     const ifd_entry_t *entry = ifd->entries + i;
     const uint16_t entry_tag = NATIVE2(ex->tiff, entry->tag);
     if (entry_tag == tag)
@@ -386,17 +387,14 @@ static void gps_tag_handler(const exif_t *ex, const ifd_entry_t *gps_tag) {
   const ifd_entry_t *alt = find_tag(ex, ifd, 0x0006);
 
   if (lat)
-    printf("%f%c ",
-           (double)NATIVE4(ex->tiff, lat->value_offset),
-            lat_ref ? (char)lat_ref->value_offset : '?');
+    printf("%f%c ", (double)NATIVE4(ex->tiff, lat->value_offset),
+           lat_ref ? (char)lat_ref->value_offset : '?');
   if (lon)
-    printf("%f%c ",
-           (double)NATIVE4(ex->tiff, lon->value_offset),
+    printf("%f%c ", (double)NATIVE4(ex->tiff, lon->value_offset),
            lon_ref ? (char)lon_ref->value_offset : '?');
   if (alt)
-    printf("%f%c ",
-           (double)NATIVE4(ex->tiff, alt->value_offset),
-            alt_ref && alt_ref->value_offset ? '+' : '-');
+    printf("%f%c ", (double)NATIVE4(ex->tiff, alt->value_offset),
+           alt_ref && alt_ref->value_offset ? '+' : '-');
   putc('\n', stdout);
 }
 
