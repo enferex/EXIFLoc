@@ -418,7 +418,7 @@ static void gps_print_coords(const exif_t *ex, const ifd_entry_t *lat,
                          (float)lat_dms.sec / 3600.0f;
     const float lon_dd = (float)lon_dms.deg + (float)lon_dms.min / 60.0f +
                          (float)lon_dms.sec / 3600.0f;
-    printf(", <https://www.google.com/maps/place/@%f%c,%f%c>", lat_dd,
+    printf(", https://www.google.com/maps/place/@%f%c,%f%c", lat_dd,
            lat_dms.dir, lon_dd, lon_dms.dir);
   }
   putc('\n', stdout);
