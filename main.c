@@ -199,17 +199,21 @@ static ifd_t *read_ifd(const exif_t *ex, const tiff_t *tiff, uint64_t *offset) {
     FAIL("Error allocating memory to store an IFD.");
 
   // Advance to the start of the first entry.
-  DBG("Reading %d entries starting at offset 0x%lx.", n_entries, *offset);
+  DBG("Reading %d entries (%zu bytes) starting at offset 0x%lx.",
+      n_entries, n_entries * sizeof(ifd_entry_t), *offset);
   ifd->n_entries = n_entries;
 
   // Instead of allocating more memory, and IFD entries are contiguous,
   // just point the start of the entires to 'entries' in this header.
-  ifd->entries = (ifd_entry_t *)(ex + *offset);
+  ifd->entries = (ifd_entry_t *)(ex->data + *offset);
   *offset += n_entries * sizeof(ifd_entry_t);
 
   // Offset to next IFD.
-  uint32_t next = *(uint32_t *)(ex + *offset);
-  *offset = NATIVE4(tiff, next);
+  const uint32_t next = *(uint32_t *)(ex->data + *offset);
+  if (next)
+    *offset = NATIVE4(tiff, next) + EXIF_HDR_BYTES;
+  else
+    *offset = 0;
   DBG("Next IFD offset is: 0x%lx.", *offset);
 
   return ifd;
@@ -239,11 +243,15 @@ static tiff_t *exif_to_tiff(const exif_t *ex) {
   // header).
   uint64_t off = EXIF_HDR_BYTES + tiff->hdr.offset;
 
-  // Read in all of the IFD entries, off will be zero at the end.
-  while (off && (off < ex->size)) {
+  ifd_t *prev = NULL;
+  while (off && off < ex->size) {
+    // Read in all of the IFD entries, off will be zero at the end.
     ifd_t *ifd = read_ifd(ex, tiff, &off);
-    ifd->next = tiff->ifds;
-    tiff->ifds = ifd;
+    if (prev)
+      prev->next = ifd;
+    else
+      tiff->ifds = ifd;
+    prev = ifd;
   }
 
   return tiff;
@@ -285,8 +293,8 @@ static exif_t *read_exif(const char *filename) {
   if (strncmp((const char *)ex->data, "Exif", 4) == 0 && ex->data[4] == 0 &&
       ex->data[5] == 0) {
     // Set the TIFF data.
+    DBG("Found EXIF data: %zu bytes.", ex->size);
     ex->tiff = exif_to_tiff(ex);
-    DBG("%s: Located %zu bytes of exif data.", filename, ex->size);
     return ex;
   }
 
@@ -303,7 +311,8 @@ static void dump(const exif_t *ex) {
   int ifd_number = 0;
   for (const ifd_t *ifd = ex->tiff->ifds; ifd; ifd = ifd->next) {
     for (int i = 0; i < ifd->n_entries; ++i) {
-      const uint16_t tag = NATIVE2(ex->tiff, ifd->entries[i].tag);
+      const ifd_entry_t *entry = ifd->entries + i;
+      const uint16_t tag = NATIVE2(ex->tiff, entry->tag);
       DBG("IFD:%d -- Tag 0x%04x", ifd_number, tag);
     }
     ++ifd_number;
