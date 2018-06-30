@@ -360,6 +360,13 @@ static const ifd_entry_t *find_tag(const exif_t *ex, const ifd_t *ifd,
   return NULL;
 }
 
+static double to_decimal_degrees(uint32_t value) {
+  const uint8_t d = ((uint8_t *)&value)[0];
+  const uint8_t m = ((uint8_t *)&value)[1];
+  const uint8_t s = ((uint8_t *)&value)[2];
+  return d + m + s;
+}
+
 static void gps_tag_handler(const exif_t *ex, const ifd_entry_t *gps_tag) {
   uint64_t offset = NATIVE4(ex->tiff, gps_tag->value_offset) + EXIF_HDR_BYTES;
   DBG("Located GPS tag at offset 0x%lx", offset);
@@ -387,13 +394,13 @@ static void gps_tag_handler(const exif_t *ex, const ifd_entry_t *gps_tag) {
   const ifd_entry_t *alt = find_tag(ex, ifd, 0x0006);
 
   if (lat)
-    printf("%f%c ", (double)NATIVE4(ex->tiff, lat->value_offset),
+    printf("%f%c ", (double)to_decimal_degrees(lat->value_offset),
            lat_ref ? (char)lat_ref->value_offset : '?');
   if (lon)
-    printf("%f%c ", (double)NATIVE4(ex->tiff, lon->value_offset),
+    printf("%f%c ", to_decimal_degrees(lon->value_offset),
            lon_ref ? (char)lon_ref->value_offset : '?');
   if (alt)
-    printf("%f%c ", (double)NATIVE4(ex->tiff, alt->value_offset),
+    printf("%f%c ", (double)alt->value_offset,
            alt_ref && alt_ref->value_offset ? '+' : '-');
   putc('\n', stdout);
 }
