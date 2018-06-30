@@ -188,7 +188,7 @@ static _Bool read_data_from_exif(void *dest, uint64_t offset, size_t size,
   return memcpy(dest, ex->data + offset, size) != NULL;
 }
 
-// This updates offset to point at the end of just-read-in ifd.
+// This updates offset to point to the next ifd to read (or 0 if done).
 static ifd_t *read_ifd(const exif_t *ex, uint64_t *offset) {
   // Read in the number of entries for this IFD.
   uint16_t n_entries;
@@ -212,7 +212,7 @@ static ifd_t *read_ifd(const exif_t *ex, uint64_t *offset) {
   ifd->entries = (ifd_entry_t *)(ex->data + *offset);
   *offset += n_entries * sizeof(ifd_entry_t);
 
-  // Offset to next IFD.
+  // Offset to next IFD, or 0 if there are no more to read..
   const uint32_t next = *(uint32_t *)(ex->data + *offset);
   if (next)
     *offset = NATIVE4(tiff, next) + EXIF_HDR_BYTES;
@@ -221,6 +221,12 @@ static ifd_t *read_ifd(const exif_t *ex, uint64_t *offset) {
   DBG("Next IFD offset is: 0x%lx.", *offset);
 
   return ifd;
+}
+
+// A single rational is 8 bytes (two 4 bytes components).
+static void read_n_rationals(const uint8_t *data, int n, uint64_t *results) {
+  for (int i=0; i<n; ++i)
+    results[i] = (uint64_t)data + (i * sizeof(uint64_t));
 }
 
 static void exif_to_tiff(exif_t *ex) {
@@ -392,6 +398,10 @@ static void gps_tag_handler(const exif_t *ex, const ifd_entry_t *gps_tag) {
   const ifd_entry_t *lat = find_tag(ex, ifd, 0x0002);
   const ifd_entry_t *lon = find_tag(ex, ifd, 0x0004);
   const ifd_entry_t *alt = find_tag(ex, ifd, 0x0006);
+
+  uint32_t off = NATIVE4(ex->tiff, lat->value_offset);
+  uint64_t rationals[3];
+  read_n_rationals(ex->data + EXIF_HDR_BYTES + off, 3, rationals);
 
   if (lat)
     printf("%f%c ", (double)to_decimal_degrees(lat->value_offset),
