@@ -22,6 +22,12 @@
  * My other program: TEPSniff (another TIFF parser)
  * the endian code came from that project.
  * https://github.com/enferex/tepsniff/
+ *
+ * Degree, minute, second (dms), to decimal degrees:
+ * https://www.rapidtables.com/convert/number/degrees-minutes-seconds-to-degrees.html
+ *
+ * A great tool for better understanding the layout of EXIF data:
+ * EXIFTool: https://www.sno.phy.queensu.ca/~phil/exiftool/
  */
 
 #define MARKER_SOI 0xD8 // Start of Image
