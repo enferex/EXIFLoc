@@ -14,6 +14,7 @@
  *
  * Exif/JPEG:
  * https://www.media.mit.edu/pia/Research/deepview/exif.html
+ * http://www.exif.org/Exif2-2.PDF (Clear definition of 'rational').
  *
  * GPSInfo EXIF Tags:
  * https://www.sno.phy.queensu.ca/~phil/exiftool/TagNames/GPS.html
@@ -65,9 +66,7 @@
 #error "Middle endian not supported."
 #endif
 
-typedef struct _coords_t {
-  uint32_t lat, lon;
-} coords_t;
+typedef struct _coords_t { uint32_t lat, lon; } coords_t;
 
 typedef struct _ifd_entry_t {
   // These reamain in their original byte order,
@@ -99,6 +98,7 @@ typedef struct _tiff_t {
 
 typedef struct _exif_t {
 #define EXIF_HDR_BYTES 6 // This is the first 6 bytes in 'data': 'Exif00'
+  const char *filename;
   size_t size;
   uint8_t *data;
   tiff_t *tiff;
@@ -219,14 +219,21 @@ static ifd_t *read_ifd(const exif_t *ex, uint64_t *offset) {
   else
     *offset = 0;
   DBG("Next IFD offset is: 0x%lx.", *offset);
-
   return ifd;
+}
+
+// From the spec: A rational is two 32bit integers, first 4 bytes is numerator
+// and second 4 bytes is denominator.
+static uint32_t rational_to_value(const exif_t *ex, uint64_t rational) {
+  uint32_t numerator = (uint32_t)(rational & 0xFFFFFFFF);
+  uint32_t denominator = (uint32_t)(rational >> 32);
+  return (uint32_t)(numerator / denominator);
 }
 
 // A single rational is 8 bytes (two 4 bytes components).
 static void read_n_rationals(const uint8_t *data, int n, uint64_t *results) {
-  for (int i=0; i<n; ++i)
-    results[i] = (uint64_t)data + (i * sizeof(uint64_t));
+  for (int i = 0; i < n; ++i)
+    results[i] = *(uint64_t *)(data + (i * sizeof(uint64_t)));
 }
 
 static void exif_to_tiff(exif_t *ex) {
@@ -276,6 +283,8 @@ static exif_t *read_exif(const char *filename) {
   exif_t *ex;
   if (!(ex = calloc(1, sizeof(exif_t))))
     FAIL("Error allocating memory to store an exif instance.");
+
+  ex->filename = filename;
 
   // Find the start of the image marker: SOI.
   const uint8_t header_marker = read_marker(fp, false);
@@ -366,11 +375,53 @@ static const ifd_entry_t *find_tag(const exif_t *ex, const ifd_t *ifd,
   return NULL;
 }
 
-static double to_decimal_degrees(uint32_t value) {
-  const uint8_t d = ((uint8_t *)&value)[0];
-  const uint8_t m = ((uint8_t *)&value)[1];
-  const uint8_t s = ((uint8_t *)&value)[2];
-  return d + m + s;
+static void gps_print_coords(const exif_t *ex, const ifd_entry_t *lat,
+                             const ifd_entry_t *lat_ref, const ifd_entry_t *lon,
+                             const ifd_entry_t *lon_ref, const ifd_entry_t *alt,
+                             const ifd_entry_t *alt_ref) {
+  struct {
+    uint32_t deg, min, sec;
+    char dir;
+  } lat_dms, lon_dms;
+
+  uint64_t rationals[3];
+  printf("%s", ex->filename);
+  if (lat) {
+    const uint32_t off = NATIVE4(ex->tiff, lat->value_offset);
+    read_n_rationals(ex->data + EXIF_HDR_BYTES + off, 3, rationals);
+    lat_dms.deg = rational_to_value(ex, rationals[0]);
+    lat_dms.min = rational_to_value(ex, rationals[1]);
+    lat_dms.sec = rational_to_value(ex, rationals[2]);
+    lat_dms.dir = lat_ref ? (char)lat_ref->value_offset : '?';
+    printf(", %uº%u'%u\"%c", lat_dms.deg, lat_dms.min, lat_dms.sec,
+           lat_dms.dir);
+  }
+  if (lon) {
+    const uint32_t off = NATIVE4(ex->tiff, lon->value_offset);
+    read_n_rationals(ex->data + EXIF_HDR_BYTES + off, 3, rationals);
+    lon_dms.deg = rational_to_value(ex, rationals[0]);
+    lon_dms.min = rational_to_value(ex, rationals[1]);
+    lon_dms.sec = rational_to_value(ex, rationals[2]);
+    lon_dms.dir = lon_ref ? (char)lon_ref->value_offset : '?';
+    printf(", %uº%u'%u\"%c", lon_dms.deg, lon_dms.min, lon_dms.sec,
+           lon_dms.dir);
+  }
+  if (alt) {
+    const uint32_t off = NATIVE4(ex->tiff, alt->value_offset);
+    read_n_rationals(ex->data + EXIF_HDR_BYTES + off, 1, rationals);
+    const uint32_t meters = rational_to_value(ex, rationals[0]);
+    printf(", %c%u meters",
+           (meters && alt_ref && !alt_ref->value_offset) ? '-' : ' ', meters);
+  }
+  if (lat && lon) {
+    const float lat_dd = (float)lat_dms.deg + (float)lat_dms.min / 60.0f +
+                         (float)lat_dms.sec / 3600.0f;
+    const float lon_dd = (float)lon_dms.deg + (float)lon_dms.min / 60.0f +
+                         (float)lon_dms.sec / 3600.0f;
+    printf(", <https://www.google.com/maps/place/@%f%c,%f%c>", lat_dd,
+           lat_dms.dir, lon_dd, lon_dms.dir);
+  }
+  putc('\n', stdout);
 }
 
 static void gps_tag_handler(const exif_t *ex, const ifd_entry_t *gps_tag) {
@@ -382,44 +433,32 @@ static void gps_tag_handler(const exif_t *ex, const ifd_entry_t *gps_tag) {
     return;
   }
 
-  // Version (sanity check).
+  // Version.
   const ifd_entry_t *ver = find_tag(ex, ifd, 0x0000);
   if (!ver) {
-    DBG("No GPS Version data found.");
+    DBG("No GPS version data found.");
     return;
   }
 
-  // Coordinate reference values: "N/S" and "E/W".
-  const ifd_entry_t *lat_ref = find_tag(ex, ifd, 0x0001);
-  const ifd_entry_t *lon_ref = find_tag(ex, ifd, 0x0003);
-  const ifd_entry_t *alt_ref = find_tag(ex, ifd, 0x0005);
+  // Coordinate reference values.
+  const ifd_entry_t *lat_ref = find_tag(ex, ifd, 0x0001); // "N or S"
+  const ifd_entry_t *lon_ref = find_tag(ex, ifd, 0x0003); // "E or W"
+  const ifd_entry_t *alt_ref = find_tag(ex, ifd, 0x0005); // 1 or 0 (asl or bsl)
 
   // Coordinates.
   const ifd_entry_t *lat = find_tag(ex, ifd, 0x0002);
   const ifd_entry_t *lon = find_tag(ex, ifd, 0x0004);
   const ifd_entry_t *alt = find_tag(ex, ifd, 0x0006);
 
-  uint32_t off = NATIVE4(ex->tiff, lat->value_offset);
-  uint64_t rationals[3];
-  read_n_rationals(ex->data + EXIF_HDR_BYTES + off, 3, rationals);
-
-  if (lat)
-    printf("%f%c ", (double)to_decimal_degrees(lat->value_offset),
-           lat_ref ? (char)lat_ref->value_offset : '?');
-  if (lon)
-    printf("%f%c ", to_decimal_degrees(lon->value_offset),
-           lon_ref ? (char)lon_ref->value_offset : '?');
-  if (alt)
-    printf("%f%c ", (double)alt->value_offset,
-           alt_ref && alt_ref->value_offset ? '+' : '-');
-  putc('\n', stdout);
+  // Print.
+  gps_print_coords(ex, lat, lat_ref, lon, lon_ref, alt, alt_ref);
 }
 
 int main(int argc, char **argv) {
   if (argc == 0)
     usage(argv[0]);
 
-  // Create the locator objets.  Basically just a key and a callback,
+  // Create the locator objects.  Basically just a key and a callback,
   // which is what we use for identifying EXIF tags we are interested in.
   locator_t locator_entries[] = {
       {0x8825, 0x0000, gps_tag_handler} // GPS tag and some type.
