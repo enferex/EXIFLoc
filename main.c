@@ -15,6 +15,9 @@
  * Exif/JPEG:
  * https://www.media.mit.edu/pia/Research/deepview/exif.html
  *
+ * GPSInfo EXIF Tags:
+ * https://www.sno.phy.queensu.ca/~phil/exiftool/TagNames/GPS.html
+ *
  * My other program: TEPSniff (another TIFF parser)
  * the endian code came from that project.
  * https://github.com/enferex/tepsniff/
@@ -186,9 +189,10 @@ static _Bool read_data_from_exif(void *dest, uint64_t offset, size_t size,
 }
 
 // This updates offset to point at the end of just-read-in ifd.
-static ifd_t *read_ifd(const exif_t *ex, const tiff_t *tiff, uint64_t *offset) {
+static ifd_t *read_ifd(const exif_t *ex, uint64_t *offset) {
   // Read in the number of entries for this IFD.
   uint16_t n_entries;
+  const tiff_t *tiff = ex->tiff;
   if (!read_data_from_exif((void *)&n_entries, *offset, sizeof(n_entries), ex))
     FAIL("Error loading IFD entry count.");
   n_entries = NATIVE2(tiff, n_entries);
@@ -219,10 +223,12 @@ static ifd_t *read_ifd(const exif_t *ex, const tiff_t *tiff, uint64_t *offset) {
   return ifd;
 }
 
-static tiff_t *exif_to_tiff(const exif_t *ex) {
+static void exif_to_tiff(exif_t *ex) {
   tiff_t *tiff = calloc(1, sizeof(tiff_t));
   if (!tiff)
     FAIL("Error allocating memory to store Exif in TIFF format.");
+
+  ex->tiff = tiff;
 
   // The TIFF header follows the EXIF header, so use the exif header size as the
   // offset.
@@ -246,15 +252,13 @@ static tiff_t *exif_to_tiff(const exif_t *ex) {
   ifd_t *prev = NULL;
   while (off && off < ex->size) {
     // Read in all of the IFD entries, off will be zero at the end.
-    ifd_t *ifd = read_ifd(ex, tiff, &off);
+    ifd_t *ifd = read_ifd(ex, &off);
     if (prev)
       prev->next = ifd;
     else
       tiff->ifds = ifd;
     prev = ifd;
   }
-
-  return tiff;
 }
 
 static exif_t *read_exif(const char *filename) {
@@ -294,7 +298,7 @@ static exif_t *read_exif(const char *filename) {
       ex->data[5] == 0) {
     // Set the TIFF data.
     DBG("Found EXIF data: %zu bytes.", ex->size);
-    ex->tiff = exif_to_tiff(ex);
+    exif_to_tiff(ex);
     return ex;
   }
 
@@ -336,15 +340,64 @@ static void locate_tags(const exif_t *ex, const locator_list_t *list) {
   assert(list && list->n_locators && "No locators defined.");
   for (const ifd_t *ifd = ex->tiff->ifds; ifd; ifd = ifd->next) {
     for (uint16_t i = 0; i < ifd->n_entries; ++i) {
-      const ifd_entry_t *entry = &ifd->entries[i];
+      const ifd_entry_t *entry = ifd->entries + i;
       callback_if_found(list, ex, entry);
     }
   }
 }
 
+// Given and IFD and tag, return a ptr to the tag or NULL if it's not found.
+static const ifd_entry_t *find_tag(const exif_t *ex, const ifd_t *ifd, uint16_t tag) {
+  assert(ifd && "Invalid IFD to search.");
+  for (uint16_t i=0; i<ifd->n_entries; ++i) {
+    const ifd_entry_t *entry = ifd->entries + i;
+    const uint16_t entry_tag = NATIVE2(ex->tiff, entry->tag);
+    if (entry_tag == tag)
+      return entry;
+  }
+
+  return NULL;
+}
+
 static void gps_tag_handler(const exif_t *ex, const ifd_entry_t *gps_tag) {
-  const uint32_t offset = NATIVE4(ex->tiff, gps_tag->value_offset);
-  DBG("Located GPS tag at offset 0x%x", offset);
+  uint64_t offset = NATIVE4(ex->tiff, gps_tag->value_offset) + EXIF_HDR_BYTES;
+  DBG("Located GPS tag at offset 0x%lx", offset);
+  ifd_t *ifd = read_ifd(ex, &offset);
+  if (!ifd) {
+    DBG("Error locating GPS IFD.");
+    return;
+  }
+
+  // Version (sanity check).
+  const ifd_entry_t *ver = find_tag(ex, ifd, 0x0000);
+  if (!ver) {
+    DBG("No GPS Version data found.");
+    return;
+  }
+
+  // Coordinate reference values: "N/S" and "E/W".
+  const ifd_entry_t *lat_ref = find_tag(ex, ifd, 0x0001);
+  const ifd_entry_t *lon_ref = find_tag(ex, ifd, 0x0003);
+  const ifd_entry_t *alt_ref = find_tag(ex, ifd, 0x0005);
+
+  // Coordinates.
+  const ifd_entry_t *lat = find_tag(ex, ifd, 0x0002);
+  const ifd_entry_t *lon = find_tag(ex, ifd, 0x0004);
+  const ifd_entry_t *alt = find_tag(ex, ifd, 0x0006);
+
+  if (lat)
+    printf("%f%c ",
+           (double)NATIVE4(ex->tiff, lat->value_offset),
+            lat_ref ? (char)lat_ref->value_offset : '?');
+  if (lon)
+    printf("%f%c ",
+           (double)NATIVE4(ex->tiff, lon->value_offset),
+           lon_ref ? (char)lon_ref->value_offset : '?');
+  if (alt)
+    printf("%f%c ",
+           (double)NATIVE4(ex->tiff, alt->value_offset),
+            alt_ref && alt_ref->value_offset ? '+' : '-');
+  putc('\n', stdout);
 }
 
 int main(int argc, char **argv) {
@@ -367,11 +420,10 @@ int main(int argc, char **argv) {
 #ifdef DEBUG
       dump(ex);
 #endif
+      // Search.
+      locate_tags(ex, &locators);
       free_exif(ex);
     }
-
-    // Search.
-    locate_tags(ex, &locators);
   }
 
   return 0;
