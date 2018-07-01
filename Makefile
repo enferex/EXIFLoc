@@ -1,6 +1,6 @@
 CC=clang
 CFLAGS=-g3 -Wall -std=c11
-APP=exifpluck
+APP=exifloc
 
 all: release
 
