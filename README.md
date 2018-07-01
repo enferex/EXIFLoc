@@ -10,10 +10,8 @@ If GPS data is found within an image file, the following data is displayed:
 `<file name>, <latitude>, <longitude>, <altitude>, <google maps url to that coordinate>`
 
 #### Caveat
-The degree/minute/second to decimal degree conversion is lossy.  The results
-are not exact, because of floating point error, but this should get you a
-general idea of where a photo was taken.  If you need more precise data then
-use the degree/minute/second output and not the maps url.
+There might be some floating point error presented in the generated URL and 
+probably some round-off error in the coordinates.
 
 #### References
 * TIFF (Format of EXIF data):
