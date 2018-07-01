@@ -28,6 +28,8 @@
  *
  * A great tool for better understanding the layout of EXIF data:
  * EXIFTool: https://www.sno.phy.queensu.ca/~phil/exiftool/
+ *
+ * Wikipedia: For figuring out how to encode the google maps urls.
  */
 
 #define MARKER_SOI 0xD8 // Start of Image

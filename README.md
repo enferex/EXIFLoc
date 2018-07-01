@@ -24,6 +24,7 @@ If GPS data is found within an image file, the following data is displayed:
   * https://www.rapidtables.com/convert/number/degrees-minutes-seconds-to-degrees.html
 * EXIFTool (great tool for exploring the format of EXIF data):
   * https://www.sno.phy.queensu.ca/~phil/exiftool/
+* Wikipedia: For figuring out how to encode the google maps urls.
 
 #### Contact
 enferex, https://github.com/enferex
