@@ -456,12 +456,15 @@ static void gps_print_coords(const exif_t *ex, const ifd_entry_t *lat,
   }
   if (lat && lon) {
     float lat_dd = (float)lat_dms.deg + (float)lat_dms.min / 60.0f +
-                         (float)lat_dms.sec / 3600.0f;
+                   (float)lat_dms.sec / 3600.0f;
     float lon_dd = (float)lon_dms.deg + (float)lon_dms.min / 60.0f +
-                         (float)lon_dms.sec / 3600.0f;
-    if (lat_dms.dir == 'S') lat_dd *= -1.0f;
-    if (lon_dms.dir == 'W') lon_dd *= -1.0f;
-    printf(", https://www.google.com/maps?ll=%f,%f", lat_dd, lon_dd);
+                   (float)lon_dms.sec / 3600.0f;
+    if (lat_dms.dir == 'S')
+      lat_dd *= -1.0f;
+    if (lon_dms.dir == 'W')
+      lon_dd *= -1.0f;
+    printf(", https://www.google.com/maps?ll=%f,%f&q=%f,%f", lat_dd, lon_dd,
+           lat_dd, lon_dd);
   }
   putc('\n', stdout);
 }
