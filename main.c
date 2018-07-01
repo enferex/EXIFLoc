@@ -265,10 +265,10 @@ static ifd_t *read_ifd(const exif_t *ex, uint64_t *offset) {
 
 // From the spec: A rational is two 32bit integers, first 4 bytes is numerator
 // and second 4 bytes is denominator.
-static uint32_t rational_to_value(const exif_t *ex, uint64_t rational) {
+static double rational_to_value(const exif_t *ex, uint64_t rational) {
   uint32_t numerator = (uint32_t)(rational & 0xFFFFFFFF);
   uint32_t denominator = (uint32_t)(rational >> 32);
-  return (uint32_t)(numerator / denominator);
+  return (double)((double)numerator / denominator);
 }
 
 // A single rational is 8 bytes (two 4 bytes components).
@@ -455,14 +455,14 @@ static void gps_print_coords(const exif_t *ex, const ifd_entry_t *lat,
            (meters && alt_ref && !alt_ref->value_offset) ? '-' : ' ', meters);
   }
   if (lat && lon) {
-    float lat_dd = (float)lat_dms.deg + (float)lat_dms.min / 60.0f +
-                   (float)lat_dms.sec / 3600.0f;
-    float lon_dd = (float)lon_dms.deg + (float)lon_dms.min / 60.0f +
-                   (float)lon_dms.sec / 3600.0f;
+    double lat_dd = (double)lat_dms.deg + (double)lat_dms.min / 60.0 +
+                   (double)lat_dms.sec / 3600.0;
+    double lon_dd = (double)lon_dms.deg + (double)lon_dms.min / 60.0 +
+                   (double)lon_dms.sec / 3600.0;
     if (lat_dms.dir == 'S')
-      lat_dd *= -1.0f;
+      lat_dd *= -1.0;
     if (lon_dms.dir == 'W')
-      lon_dd *= -1.0f;
+      lon_dd *= -1.0;
     printf(", https://www.google.com/maps?ll=%f,%f&q=%f,%f", lat_dd, lon_dd,
            lat_dd, lon_dd);
   }
