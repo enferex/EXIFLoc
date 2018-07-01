@@ -421,7 +421,7 @@ static void gps_print_coords(const exif_t *ex, const ifd_entry_t *lat,
                              const ifd_entry_t *lon_ref, const ifd_entry_t *alt,
                              const ifd_entry_t *alt_ref) {
   struct {
-    uint32_t deg, min, sec;
+    double deg, min, sec;
     char dir;
   } lat_dms, lon_dms;
 
@@ -434,8 +434,8 @@ static void gps_print_coords(const exif_t *ex, const ifd_entry_t *lat,
     lat_dms.min = rational_to_value(ex, rationals[1]);
     lat_dms.sec = rational_to_value(ex, rationals[2]);
     lat_dms.dir = lat_ref ? (char)lat_ref->value_offset : '?';
-    printf(", %uº%u'%u\"%c", lat_dms.deg, lat_dms.min, lat_dms.sec,
-           lat_dms.dir);
+    printf(", %luº%lu'%lu\"%c", (uint64_t)lat_dms.deg, (uint64_t)lat_dms.min,
+           (uint64_t)lat_dms.sec, lat_dms.dir);
   }
   if (lon) {
     const uint32_t off = NATIVE4(ex->tiff, lon->value_offset);
@@ -444,21 +444,21 @@ static void gps_print_coords(const exif_t *ex, const ifd_entry_t *lat,
     lon_dms.min = rational_to_value(ex, rationals[1]);
     lon_dms.sec = rational_to_value(ex, rationals[2]);
     lon_dms.dir = lon_ref ? (char)lon_ref->value_offset : '?';
-    printf(", %uº%u'%u\"%c", lon_dms.deg, lon_dms.min, lon_dms.sec,
-           lon_dms.dir);
+    printf(", %luº%lu'%lu\"%c", (uint64_t)lon_dms.deg, (uint64_t)lon_dms.min,
+           (uint64_t)lon_dms.sec, lon_dms.dir);
   }
   if (alt) {
     const uint32_t off = NATIVE4(ex->tiff, alt->value_offset);
     read_n_rationals(ex->data + EXIF_HDR_BYTES + off, 1, rationals);
-    const uint32_t meters = rational_to_value(ex, rationals[0]);
-    printf(", %c%u meters",
+    const double meters = rational_to_value(ex, rationals[0]);
+    printf(", %c%f meters",
            (meters && alt_ref && !alt_ref->value_offset) ? '-' : ' ', meters);
   }
   if (lat && lon) {
     double lat_dd = (double)lat_dms.deg + (double)lat_dms.min / 60.0 +
-                   (double)lat_dms.sec / 3600.0;
+                    (double)lat_dms.sec / 3600.0;
     double lon_dd = (double)lon_dms.deg + (double)lon_dms.min / 60.0 +
-                   (double)lon_dms.sec / 3600.0;
+                    (double)lon_dms.sec / 3600.0;
     if (lat_dms.dir == 'S')
       lat_dd *= -1.0;
     if (lon_dms.dir == 'W')
