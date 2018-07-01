@@ -9,6 +9,12 @@ additional arguments to this tool except for the list of image files to scan.
 If GPS data is found within an image file, the following data is displayed:
 `<file name>, <latitude>, <longitude>, <altitude>, <google maps url to that coordinate>`
 
+#### Caveat
+The degree/minute/second to decimal degree conversion is a lossy.  The results
+are not exact, because of floating point error, but this should get you a
+general idea of where a photo was taken.  If you need more precise data then
+use the degree/minute/second output and not the maps url.
+
 #### References
 * TIFF (Format of EXIF data):
   * https://www.adobe.io/content/udp/en/open/standards/TIFF/_jcr_content/contentbody/download/file.res/TIFF6.pdf
