@@ -465,7 +465,8 @@ static void gps_print_coords(const exif_t *ex, const ifd_entry_t *lat,
       lon_dd *= -1.0;
     printf(", https://www.google.com/maps?ll=%f,%f&q=%f,%f", lat_dd, lon_dd,
            lat_dd, lon_dd);
-  }
+  } else
+    printf(", GPS data found, but no coordinates.");
   putc('\n', stdout);
 }
 
