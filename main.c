@@ -266,8 +266,8 @@ static ifd_t *read_ifd(const exif_t *ex, uint64_t *offset) {
 // From the spec: A rational is two 32bit integers, first 4 bytes is numerator
 // and second 4 bytes is denominator.
 static double rational_to_value(const exif_t *ex, uint64_t rational) {
-  uint32_t numerator = (uint32_t)(rational & 0xFFFFFFFF);
-  uint32_t denominator = (uint32_t)(rational >> 32);
+  uint32_t numerator = NATIVE4(ex->tiff, (uint32_t)(rational & 0xFFFFFFFF));
+  uint32_t denominator = NATIVE4(ex->tiff, (uint32_t)(rational >> 32));
   return (double)((double)numerator / denominator);
 }
 
