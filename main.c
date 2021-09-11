@@ -60,25 +60,28 @@
  * Degree, minute, second (dms), to decimal degrees:
  * https://www.rapidtables.com/convert/number/degrees-minutes-seconds-to-degrees.html
  *
+ * Decimal degrees to dms:
+ * https://www.calculatorsoup.com/calculators/conversions/convert-decimal-degrees-to-degrees-minutes-seconds.php
+ *
  * A great tool for better understanding the layout of EXIF data:
  * EXIFTool: https://www.sno.phy.queensu.ca/~phil/exiftool/
  *
  * Wikipedia: For figuring out how to encode the google maps urls.
  */
 
-#define MARKER_SOI 0xD8 // Start of Image
-#define MARKER_EOI 0xD9 // End of Image
-#define MARKER_SOS 0xDA // Start of Stream
+#define MARKER_SOI 0xD8  // Start of Image
+#define MARKER_EOI 0xD9  // End of Image
+#define MARKER_SOS 0xDA  // Start of Stream
 
-#define _PR(_fd, _pre, _msg, ...)                                              \
-  do {                                                                         \
-    fprintf(_fd, _pre " " _msg "\n", ##__VA_ARGS__);                           \
+#define _PR(_fd, _pre, _msg, ...)                    \
+  do {                                               \
+    fprintf(_fd, _pre " " _msg "\n", ##__VA_ARGS__); \
   } while (0)
 
-#define FAIL(_msg, ...)                                                        \
-  do {                                                                         \
-    _PR(stderr, "[!]", _msg, ##__VA_ARGS__);                                   \
-    exit(EXIT_FAILURE);                                                        \
+#define FAIL(_msg, ...)                      \
+  do {                                       \
+    _PR(stderr, "[!]", _msg, ##__VA_ARGS__); \
+    exit(EXIT_FAILURE);                      \
   } while (0)
 
 #define PR(...) _PR(stdout, "[-]", __VA_ARGS__)
@@ -108,7 +111,9 @@
 #error "Middle endian not supported."
 #endif
 
-typedef struct _coords_t { uint32_t lat, lon; } coords_t;
+typedef struct _coords_t {
+  uint32_t lat, lon;
+} coords_t;
 
 typedef struct _ifd_entry_t {
   // These reamain in their original byte order,
@@ -128,9 +133,9 @@ typedef struct _ifd_t {
 } ifd_t;
 
 typedef struct _tiff_hdr_t {
-  uint16_t byte_order; // "II": Little endian, "MM": Big endian.
-  uint16_t universe;   // Must be 42.
-  uint32_t offset;     // Initial IFD offset
+  uint16_t byte_order;  // "II": Little endian, "MM": Big endian.
+  uint16_t universe;    // Must be 42.
+  uint32_t offset;      // Initial IFD offset
 } tiff_hdr_t;
 
 typedef struct _tiff_t {
@@ -139,7 +144,7 @@ typedef struct _tiff_t {
 } tiff_t;
 
 typedef struct _exif_t {
-#define EXIF_HDR_BYTES 6 // This is the first 6 bytes in 'data': 'Exif00'
+#define EXIF_HDR_BYTES 6  // This is the first 6 bytes in 'data': 'Exif00'
   const char *filename;
   size_t size;
   uint8_t *data;
@@ -148,8 +153,8 @@ typedef struct _exif_t {
 
 // This represents the tag to search for.
 typedef struct _locator_t {
-  uint16_t tag;  // IFD tag  (native endian)
-  uint16_t type; // IFD type (native endian)
+  uint16_t tag;   // IFD tag  (native endian)
+  uint16_t type;  // IFD type (native endian)
 
   // This is called back if tag is a match when searching IFDs.
   void (*cb)(const exif_t *e, const ifd_entry_t *i);
@@ -168,8 +173,7 @@ static void usage(const char *execname) {
 
 static int safe_fgetc(FILE *fp) {
   const int byte = fgetc(fp);
-  if (byte == EOF)
-    FAIL("Error reading input file.");
+  if (byte == EOF) FAIL("Error reading input file.");
   return byte;
 }
 
@@ -178,8 +182,7 @@ static uint8_t read_marker(FILE *fp, _Bool fatal) {
   const int byte = safe_fgetc(fp);
   if (byte != 0xFF) {
     // We did not get a marker header which we expected.
-    if (fatal)
-      FAIL("Invalid start of marker, expected 0xFF.");
+    if (fatal) FAIL("Invalid start of marker, expected 0xFF.");
     return 0;
   }
   return (uint8_t)safe_fgetc(fp);
@@ -195,21 +198,19 @@ static _Bool find_marker(FILE *fp, int marker) {
   while (!feof(fp) && !ferror(fp)) {
     const uint8_t current_marker = read_marker(fp, true);
     DBG("Marker: 0x%02x", current_marker);
-    if (current_marker == marker)
-      return true;
+    if (current_marker == marker) return true;
 
     // Special cases.
     if (current_marker == MARKER_SOS)
-      return false; // This will lead to the EOI, so we are done with this
-                    // image.
+      return false;  // This will lead to the EOI, so we are done with this
+                     // image.
     else if (current_marker == MARKER_SOI || current_marker == MARKER_EOI)
       continue;
     else {
       // Skip bytes if not SOI, SOS, or EOI.
       const uint16_t skip = read_marker_size(fp) - 2;
       DBG("Skipping %d bytes.", skip);
-      if (fseek(fp, skip, SEEK_CUR) != 0)
-        FAIL("Error seeking to next marker.");
+      if (fseek(fp, skip, SEEK_CUR) != 0) FAIL("Error seeking to next marker.");
     }
   }
 
@@ -225,8 +226,7 @@ static void free_exif(exif_t *ex) {
 // Given an exif and an offset, read data from the exif data blob.
 static _Bool read_data_from_exif(void *dest, uint64_t offset, size_t size,
                                  const exif_t *ex) {
-  if (offset + size > ex->size)
-    return false;
+  if (offset + size > ex->size) return false;
   return memcpy(dest, ex->data + offset, size) != NULL;
 }
 
@@ -279,8 +279,7 @@ static void read_n_rationals(const uint8_t *data, int n, uint64_t *results) {
 
 static void exif_to_tiff(exif_t *ex) {
   tiff_t *tiff = calloc(1, sizeof(tiff_t));
-  if (!tiff)
-    FAIL("Error allocating memory to store Exif in TIFF format.");
+  if (!tiff) FAIL("Error allocating memory to store Exif in TIFF format.");
 
   ex->tiff = tiff;
 
@@ -294,8 +293,7 @@ static void exif_to_tiff(exif_t *ex) {
   tiff->hdr.offset = NATIVE4(tiff, tiff->hdr.offset);
 
   // Sanity check.
-  if (tiff->hdr.universe != 42)
-    FAIL("Invalid TIFF format.");
+  if (tiff->hdr.universe != 42) FAIL("Invalid TIFF format.");
 
   // Initialize the IFD scan by placing the offset at the beginning of the TIFF
   // data.  We advance past the first header (EXIF) since the TIFF data offset
@@ -318,8 +316,7 @@ static void exif_to_tiff(exif_t *ex) {
 static exif_t *read_exif(const char *filename) {
   DBG("Loading %s", filename);
   FILE *fp = fopen(filename, "r");
-  if (!fp)
-    FAIL("Error opening %s: %s", filename, strerror(errno));
+  if (!fp) FAIL("Error opening %s: %s", filename, strerror(errno));
 
   exif_t *ex;
   if (!(ex = calloc(1, sizeof(exif_t))))
@@ -331,13 +328,13 @@ static exif_t *read_exif(const char *filename) {
   const uint8_t header_marker = read_marker(fp, false);
   if (header_marker != 0xD8) {
     DBG("%s: Not a file format we know how to handle.", filename);
-    goto oops; // Not an image format we know how to handle.
+    goto oops;  // Not an image format we know how to handle.
   }
 
   // Find the start of APP1 (where exif lives).
   if (!find_marker(fp, 0xE1)) {
     DBG("%s: Could not locate exif data.", filename);
-    goto oops; // Couldn't find exif.
+    goto oops;  // Couldn't find exif.
   }
 
   // Assume we have a valid app1, read in its contents.
@@ -365,8 +362,7 @@ oops:
 
 #ifdef DEBUG
 static void dump(const exif_t *ex) {
-  if (!ex->tiff)
-    return;
+  if (!ex->tiff) return;
 
   int ifd_number = 0;
   for (const ifd_t *ifd = ex->tiff->ifds; ifd; ifd = ifd->next) {
@@ -378,7 +374,7 @@ static void dump(const exif_t *ex) {
     ++ifd_number;
   }
 }
-#endif // DEBUG
+#endif  // DEBUG
 
 // Scan each locator to see if it matches the tag.
 static void callback_if_found(const locator_list_t *list, const exif_t *ex,
@@ -386,8 +382,7 @@ static void callback_if_found(const locator_list_t *list, const exif_t *ex,
   const uint16_t tag = NATIVE2(ex->tiff, entry->tag);
   const locator_t *locs = list->locators;
   for (int i = 0; i < list->n_locators; ++i)
-    if (locs[i].tag == tag)
-      locs[i].cb(ex, entry);
+    if (locs[i].tag == tag) locs[i].cb(ex, entry);
 }
 
 // Scan each IFD entry in ex.
@@ -519,17 +514,16 @@ static void gps_tag_handler(const exif_t *ex, const ifd_entry_t *gps_tag) {
 }
 
 int main(int argc, char **argv) {
-  if (argc == 0)
-    usage(argv[0]);
+  if (argc == 0) usage(argv[0]);
 
   // Create the locator objects.  Basically just a key and a callback,
   // which is what we use for identifying EXIF tags we are interested in.
   locator_t locator_entries[] = {
-      {0x8825, 0x0000, gps_tag_handler} // GPS tag and some type.
+      {0x8825, 0x0000, gps_tag_handler}  // GPS tag and some type.
   };
-  const locator_list_t locators = {.n_locators = sizeof(locator_entries) /
-                                                 sizeof(locator_entries[0]),
-                                   .locators = locator_entries};
+  const locator_list_t locators = {
+      .n_locators = sizeof(locator_entries) / sizeof(locator_entries[0]),
+      .locators = locator_entries};
 
   // For each file specified on the command line.
   for (int i = 1; i < argc; ++i) {
