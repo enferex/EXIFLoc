@@ -409,60 +409,84 @@ static const ifd_entry_t *find_tag(const exif_t *ex, const ifd_t *ifd,
   for (uint16_t i = 0; i < ifd->n_entries; ++i) {
     const ifd_entry_t *entry = ifd->entries + i;
     const uint16_t entry_tag = NATIVE2(ex->tiff, entry->tag);
-    if (entry_tag == tag)
-      return entry;
+    if (entry_tag == tag) return entry;
   }
 
   return NULL;
+}
+
+typedef struct _dms_t {
+  double deg, min, sec;
+} dms_t;
+
+static double degrees_from_decimal_degrees(double decimal_degrees) {
+  return floor(decimal_degrees);  // Just the whole number.
+}
+
+static double minutes_from_decimal_degrees(double decimal_degrees) {
+  double whole = degrees_from_decimal_degrees(decimal_degrees);
+  double fract = decimal_degrees - whole;
+  return fract * 60.0;
+}
+
+static double seconds_from_decimal_degrees(double decimal_degrees) {
+  double mins = minutes_from_decimal_degrees(decimal_degrees);
+  double whole = floor(mins);
+  double fract = mins - whole;
+  return fract * 60.0;
+}
+
+static dms_t rationals_to_dms(const exif_t *ex, const uint64_t *rationals) {
+  double deg = rational_to_value(ex, rationals[0]);
+  double min = rational_to_value(ex, rationals[1]);
+  double sec = rational_to_value(ex, rationals[2]);
+  if (!min && !sec) {
+    min = minutes_from_decimal_degrees(deg);
+    sec = seconds_from_decimal_degrees(deg);
+    deg = degrees_from_decimal_degrees(deg);
+  }
+
+  return (dms_t){.deg = deg, .min = min, .sec = sec};
 }
 
 static void gps_print_coords(const exif_t *ex, const ifd_entry_t *lat,
                              const ifd_entry_t *lat_ref, const ifd_entry_t *lon,
                              const ifd_entry_t *lon_ref, const ifd_entry_t *alt,
                              const ifd_entry_t *alt_ref) {
-  struct {
-    double deg, min, sec;
-    char dir;
-  } lat_dms, lon_dms;
-
   uint64_t rationals[3];
+  dms_t lat_dms, lon_dms;
+  char lat_dir, lon_dir;
   printf("%s", ex->filename);
   if (lat) {
     const uint32_t off = NATIVE4(ex->tiff, lat->value_offset);
     read_n_rationals(ex->data + EXIF_HDR_BYTES + off, 3, rationals);
-    lat_dms.deg = rational_to_value(ex, rationals[0]);
-    lat_dms.min = rational_to_value(ex, rationals[1]);
-    lat_dms.sec = rational_to_value(ex, rationals[2]);
-    lat_dms.dir = lat_ref ? (char)lat_ref->value_offset : '?';
+    lat_dms = rationals_to_dms(ex, rationals);
+    lat_dir = lat_ref ? (char)lat_ref->value_offset : '?';
     printf(", %luº%lu'%lu\"%c", (uint64_t)lat_dms.deg, (uint64_t)lat_dms.min,
-           (uint64_t)lat_dms.sec, lat_dms.dir);
+           (uint64_t)lat_dms.sec, lat_dir);
   }
   if (lon) {
     const uint32_t off = NATIVE4(ex->tiff, lon->value_offset);
     read_n_rationals(ex->data + EXIF_HDR_BYTES + off, 3, rationals);
-    lon_dms.deg = rational_to_value(ex, rationals[0]);
-    lon_dms.min = rational_to_value(ex, rationals[1]);
-    lon_dms.sec = rational_to_value(ex, rationals[2]);
-    lon_dms.dir = lon_ref ? (char)lon_ref->value_offset : '?';
+    lon_dms = rationals_to_dms(ex, rationals);
+    lon_dir = lon_ref ? (char)lon_ref->value_offset : '?';
     printf(", %luº%lu'%lu\"%c", (uint64_t)lon_dms.deg, (uint64_t)lon_dms.min,
-           (uint64_t)lon_dms.sec, lon_dms.dir);
+           (uint64_t)lon_dms.sec, lon_dir);
   }
   if (alt) {
     const uint32_t off = NATIVE4(ex->tiff, alt->value_offset);
     read_n_rationals(ex->data + EXIF_HDR_BYTES + off, 1, rationals);
     const double meters = rational_to_value(ex, rationals[0]);
     printf(", %c%f meters",
-           (meters && alt_ref && !alt_ref->value_offset) ? '-' : ' ', meters);
+           (meters && alt_ref && !alt_ref->value_offset) ? '+' : '-', meters);
   }
   if (lat && lon) {
     double lat_dd = (double)lat_dms.deg + (double)lat_dms.min / 60.0 +
                     (double)lat_dms.sec / 3600.0;
     double lon_dd = (double)lon_dms.deg + (double)lon_dms.min / 60.0 +
                     (double)lon_dms.sec / 3600.0;
-    if (lat_dms.dir == 'S')
-      lat_dd *= -1.0;
-    if (lon_dms.dir == 'W')
-      lon_dd *= -1.0;
+    if (lat_dir == 'S') lat_dd *= -1.0;
+    if (lon_dir == 'W') lon_dd *= -1.0;
     printf(", https://www.google.com/maps?ll=%f,%f&q=%f,%f", lat_dd, lon_dd,
            lat_dd, lon_dd);
   } else
@@ -479,17 +503,11 @@ static void gps_tag_handler(const exif_t *ex, const ifd_entry_t *gps_tag) {
     return;
   }
 
-  // Version.
-  const ifd_entry_t *ver = find_tag(ex, ifd, 0x0000);
-  if (!ver) {
-    DBG("No GPS version data found.");
-    return;
-  }
-
   // Coordinate reference values.
-  const ifd_entry_t *lat_ref = find_tag(ex, ifd, 0x0001); // "N or S"
-  const ifd_entry_t *lon_ref = find_tag(ex, ifd, 0x0003); // "E or W"
-  const ifd_entry_t *alt_ref = find_tag(ex, ifd, 0x0005); // 1 or 0 (asl or bsl)
+  const ifd_entry_t *lat_ref = find_tag(ex, ifd, 0x0001);  // "N or S"
+  const ifd_entry_t *lon_ref = find_tag(ex, ifd, 0x0003);  // "E or W"
+  const ifd_entry_t *alt_ref =
+      find_tag(ex, ifd, 0x0005);  // 1 or 0 (asl or bsl)
 
   // Coordinates.
   const ifd_entry_t *lat = find_tag(ex, ifd, 0x0002);
