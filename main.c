@@ -1,7 +1,7 @@
 /*******************************************************************************
  * BSD 3-Clause License
  *
- * Copyright (c) 2018, Matt Davis (enferex) https://github.com/enferex
+ * Copyright (c) 2018-2021 Matt Davis (enferex) https://github.com/enferex
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
