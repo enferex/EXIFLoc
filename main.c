@@ -35,6 +35,7 @@
 #include <assert.h>
 #include <endian.h>
 #include <errno.h>
+#include <math.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -239,9 +240,8 @@ static ifd_t *read_ifd(const exif_t *ex, uint64_t *offset) {
   n_entries = NATIVE2(tiff, n_entries);
   *offset += sizeof(n_entries);
 
-  ifd_t *ifd = calloc(1, sizeof(ifd));
-  if (!ifd)
-    FAIL("Error allocating memory to store an IFD.");
+  ifd_t *ifd = calloc(1, sizeof(ifd_t));
+  if (!ifd) FAIL("Error allocating memory to store an IFD.");
 
   // Advance to the start of the first entry.
   DBG("Reading %d entries (%zu bytes) starting at offset 0x%lx.", n_entries,

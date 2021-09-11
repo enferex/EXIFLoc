@@ -5,7 +5,7 @@ APP=exifloc
 all: release
 
 $(APP): main.c
-	$(CC) $(CFLAGS) $^ -o $@
+	$(CC) $(CFLAGS) $^ -o $@ -lm
 
 .PHONY: test
 test: $(APP)
