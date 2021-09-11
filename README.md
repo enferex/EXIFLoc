@@ -26,6 +26,8 @@ probably some round-off error in the coordinates.
   * https://github.com/enferex/tepsniff/
 * Degree, minute, second (dms), to decimal degrees:
   * https://www.rapidtables.com/convert/number/degrees-minutes-seconds-to-degrees.html
+* Decimal degrees to dms:
+  * https://www.calculatorsoup.com/calculators/conversions/convert-decimal-degrees-to-degrees-minutes-seconds.php
 * EXIFTool (great tool for exploring the format of EXIF data):
   * https://www.sno.phy.queensu.ca/~phil/exiftool/
 * Wikipedia: For figuring out how to encode the google maps urls.
